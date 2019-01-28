@@ -66,7 +66,7 @@ int vmm_fetch_instruction(vmm_vcpu_t *vcpu, uint32_t eip, uintptr_t cr3,
     uint32_t pdi = eip >> 22;
     uint32_t pti = (eip >> 12) & 0x3FF;
 
-    uint32_t pde = guest_get_phys_word(vcpu->vmm, cr3 + pdi * 4);
+    uint32_t pde = guest_get_phys_word(vcpu->parent_vmm, cr3 + pdi * 4);
 
     assert(IA32_PDE_PRESENT(pde)); /* WTF? */
 
@@ -75,7 +75,7 @@ int vmm_fetch_instruction(vmm_vcpu_t *vcpu, uint32_t eip, uintptr_t cr3,
         instr_phys = (uintptr_t)IA32_PSE_ADDR(pde) + (eip & 0x3FFFFF);
     } else {
         /* 4k pages */
-        uint32_t pte = guest_get_phys_word(vcpu->vmm,
+        uint32_t pte = guest_get_phys_word(vcpu->parent_vmm,
                 (uintptr_t)IA32_PTE_ADDR(pde) + pti * 4);
 
         assert(IA32_PDE_PRESENT(pte));
@@ -84,7 +84,7 @@ int vmm_fetch_instruction(vmm_vcpu_t *vcpu, uint32_t eip, uintptr_t cr3,
     }
 
     /* Fetch instruction */
-    vmm_guest_vspace_touch(&vcpu->vmm->guest_mem.vspace, instr_phys, len,
+    vmm_guest_vspace_touch(&vcpu->parent_vmm->guest_mem.vspace, instr_phys, len,
             vmm_guest_get_phys_data_help, buf);
 
     return 0;

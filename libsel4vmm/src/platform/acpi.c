@@ -91,7 +91,7 @@ int make_guest_acpi_tables(vmm_t *vmm) {
             .length = sizeof(acpi_madt_ioapic_t)
         },
         .ioapic_id = 0,
-        .address = IOAPIC_DEFAULT_PHYS_BASE,
+        .address = IO_APIC_DEFAULT_PHYS_BASE,
         .gs_interrupt_base = 0 // TODO set this up?
     };
     memcpy(madt_entry, &ioapic, sizeof(ioapic));

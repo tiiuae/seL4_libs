@@ -418,10 +418,10 @@ void vmm_init_guest_thread_state(vmm_vcpu_t *vcpu) {
     vmm_set_user_context(&vcpu->guest_state, USER_CONTEXT_EDX, 0);
 
     /* Entry point. */
-    printf("Initializing guest to start running at 0x%x\n", (unsigned int)vcpu->vmm->guest_image.entry);
-    vmm_guest_state_set_eip(&vcpu->guest_state, vcpu->vmm->guest_image.entry);
+    printf("Initializing guest to start running at 0x%x\n", (unsigned int)vcpu->parent_vmm->guest_image.entry);
+    vmm_guest_state_set_eip(&vcpu->guest_state, vcpu->parent_vmm->guest_image.entry);
     /* The boot_param structure. */
-    vmm_set_user_context(&vcpu->guest_state, USER_CONTEXT_ESI, vcpu->vmm->guest_image.boot_info);
+    vmm_set_user_context(&vcpu->guest_state, USER_CONTEXT_ESI, vcpu->parent_vmm->guest_image.boot_info);
 
     /* Set the initial CR state */
     vcpu->guest_state.virt.cr.cr0_mask = VMM_VMCS_CR0_MASK;
@@ -434,7 +434,7 @@ void vmm_init_guest_thread_state(vmm_vcpu_t *vcpu) {
 
     /* Set the initial CR states */
     vmm_guest_state_set_cr0(&vcpu->guest_state, vcpu->guest_state.virt.cr.cr0_host_bits);
-    vmm_guest_state_set_cr3(&vcpu->guest_state, vcpu->vmm->guest_image.pd);
+    vmm_guest_state_set_cr3(&vcpu->guest_state, vcpu->parent_vmm->guest_image.pd);
     vmm_guest_state_set_cr4(&vcpu->guest_state, vcpu->guest_state.virt.cr.cr4_host_bits);
 
     /* Init guest OS vcpu state. */

@@ -44,7 +44,6 @@ typedef struct platform_callbacks {
     int (*get_interrupt)();
     int (*has_interrupt)();
     int (*do_async)(seL4_Word badge);
-    seL4_CPtr (*get_async_event_notification)();
 } platform_callbacks_t;
 
 /* Stores informatoin about the guest image we are loading. This information probably stops
@@ -77,20 +76,34 @@ typedef struct guest_image {
 
 /* Represents a libsel4vmm vcpu */
 typedef struct vmm_vcpu {
+
+    int vcpu_id;
+    seL4_Word affinity;
+    int online;
+    vmm_t *parent_vmm;
+
     /* kernel objects */
     seL4_CPtr guest_vcpu;
+    seL4_CPtr tcb;
+    seL4_CPtr sc;
+    seL4_CPtr sched_ctrl;
+    seL4_CPtr async_event_notification;
 
     /* context */
     guest_state_t guest_state;
 
-    /* parent vmm */
-    vmm_t *vmm;
+    bool sync_guest_state;
+    bool sync_guest_context;
 
+    /* local APIC */
+    int apic_id;
     vmm_lapic_t *lapic;
-    int vcpu_id;
 
-    /* is the vcpu online */
-    int online;
+    /* MMIO management */
+    vmm_mmio_list_t mmio_list;
+
+    /* platform callback functions */
+    platform_callbacks_t plat_callbacks;
 } vmm_vcpu_t;
 
 /* Represents a vmm instance that runs a single guest with one or more vcpus */
@@ -104,15 +117,6 @@ typedef struct vmm {
     vspace_t host_vspace;
     /* due ot limitation of the vka interface we still need an explicit allocman */
     allocman_t *allocman;
-
-    /* TCB of the VMM thread
-     * TODO: Should eventually have one vmm thread per vcpu */
-    seL4_CPtr tcb;
-    seL4_CPtr sc;
-    seL4_CPtr sched_ctrl;
-
-    /* platform callback functions */
-    platform_callbacks_t plat_callbacks;
 
     /* Default page size to use */
     int page_size;
@@ -130,26 +134,19 @@ typedef struct vmm {
     /* IO port management */
     vmm_io_port_list_t io_port;
 
-    /* MMIO management. Should probably be per-vcpu, e.g. we can't handle the
-     * guest trying to remap a local APIC */
-    vmm_mmio_list_t mmio_list;
-
+    /* VCPU specific */
     unsigned int num_vcpus;
     vmm_vcpu_t *vcpus;
 
     vmcall_handler_t *vmcall_handlers;
     unsigned int vmcall_num_handlers;
-
-    /*TODO add
-        map of vcpu affinities
-    */
 } vmm_t;
 
 /* Finalize the VM before running it */
 int vmm_finalize(vmm_t *vmm);
 
-/*running vmm moudle*/
-void vmm_run(vmm_t *vmm);
+/*running vmm module*/
+void vmm_run_vcpu(vmm_vcpu_t *vcpu);
 
 /* TODO htf did these get here? lets refactor everything  */
 void vmm_sync_guest_state(vmm_vcpu_t *vcpu);
@@ -159,3 +156,6 @@ void vmm_reply_vm_exit(vmm_vcpu_t *vcpu);
 /* mint a badged copy of the vmm's async event notification cap */
 seL4_CPtr vmm_create_async_event_notification_cap(vmm_t *vmm, seL4_Word badge);
 
+/* suspend/resume vcpu functions */
+int vmm_resume_vcpu(vmm_vcpu_t *vcpu);
+int vmm_suspend_vcpu(vmm_vcpu_t *vcpu);

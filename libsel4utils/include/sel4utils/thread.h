@@ -70,6 +70,7 @@ typedef void (*sel4utils_thread_entry_fn)(void *arg0, void *arg1, void *ipc_buf)
  * @param fault_endpoint endpoint to set as the threads fault endpoint. Can be 0.
  * @param cspace the root of the cspace to start the thread in
  * @param cspace_root_data data for cspace access
+ * @param sched_params schedule configuration parameters. Can be NULL.
  * @param res an uninitialised sel4utils_thread_t data structure that will be initialised
  *            after this operation.
  *
@@ -77,7 +78,7 @@ typedef void (*sel4utils_thread_entry_fn)(void *arg0, void *arg1, void *ipc_buf)
  */
 int sel4utils_configure_thread(vka_t *vka, vspace_t *parent, vspace_t *alloc, seL4_CPtr fault_endpoint,
                                seL4_CNode cspace, seL4_Word cspace_root_data,
-                               sel4utils_thread_t *res);
+                               sched_params_t *sched_params, sel4utils_thread_t *res);
 
 /**
  * As per sel4utils_configure_thread, but using a config struct.
@@ -195,12 +196,14 @@ void sel4utils_free_checkpoint(sel4utils_checkpoint_t *checkpoint);
  * @param cspace the cspace that the fault_endpoint is in
  * @param data the cspace_data for that cspace (with correct guard)
  * @param name the name of the thread to print if it faults
+ * @param sched_params schedule configuration parameters. Can be NULL.
  * @param thread the thread data structure to populate
  *
  * @return 0 on success.
  */
 int sel4utils_start_fault_handler(seL4_CPtr fault_endpoint, vka_t *vka, vspace_t *vspace,
-                                  seL4_CPtr cspace, seL4_Word data, char *name, sel4utils_thread_t *res);
+                                  seL4_CPtr cspace, seL4_Word data, char *name,
+                                  sched_params_t *sched_params, sel4utils_thread_t *res);
 
 /**
  * Pretty print a fault message.

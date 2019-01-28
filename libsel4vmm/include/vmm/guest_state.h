@@ -16,6 +16,7 @@
 
 #include <sel4/sel4.h>
 
+#include "vmm/processor/cpuid.h"
 #include "vmm/vmcs.h"
 #include "vmm/platform/vmcs.h"
 
@@ -365,26 +366,25 @@ static inline void vmm_guest_state_sync_entry_exception_error_code(guest_state_t
 
 /* Exit */
 static inline unsigned int vmm_guest_exit_get_reason(guest_state_t *gs) {
-    assert(gs->exit.in_exit);
+    ZF_LOGF_IF(!gs->exit.in_exit, "VMM Guest running with apic_id %d not in exit\n", vmm_get_current_apic_id());
     return gs->exit.reason;
 }
 
 static inline unsigned int vmm_guest_exit_get_physical(guest_state_t *gs) {
-    assert(gs->exit.in_exit);
+    ZF_LOGF_IF(!gs->exit.in_exit, "VMM Guest running with apic_id %d not in exit\n", vmm_get_current_apic_id());
     return gs->exit.guest_physical;
 }
 
 static inline unsigned int vmm_guest_exit_get_int_len(guest_state_t *gs) {
-    assert(gs->exit.in_exit);
+    ZF_LOGF_IF(!gs->exit.in_exit, "VMM Guest running with apic_id %d not in exit\n", vmm_get_current_apic_id());
     return gs->exit.instruction_length;
 }
 
 static inline unsigned int vmm_guest_exit_get_qualification(guest_state_t *gs) {
-    assert(gs->exit.in_exit);
+    ZF_LOGF_IF(!gs->exit.in_exit, "VMM Guest running with apic_id %d not in exit\n", vmm_get_current_apic_id());
     return gs->exit.qualification;
 }
 
 static inline void vmm_guest_exit_next_instruction(guest_state_t *gs, seL4_CPtr vcpu) {
     vmm_guest_state_set_eip(gs, vmm_guest_state_get_eip(gs) + vmm_guest_exit_get_int_len(gs));
 }
-

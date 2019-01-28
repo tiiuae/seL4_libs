@@ -52,8 +52,8 @@ int vmm_mmio_exit_handler(vmm_vcpu_t *vcpu, uintptr_t addr, unsigned int qualifi
     }
 
     // Search the list
-    for (int i = 0; i < vcpu->vmm->mmio_list.num_ranges; i++) {
-        vmm_mmio_range_t *range = &vcpu->vmm->mmio_list.ranges[i];
+    for (int i = 0; i < vcpu->mmio_list.num_ranges; i++) {
+        vmm_mmio_range_t *range = &vcpu->mmio_list.ranges[i];
 
         if (addr < range->start) {
             return -1;

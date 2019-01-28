@@ -50,7 +50,7 @@ int vmm_vmcall_handler(vmm_vcpu_t *vcpu) {
     int res;
     vmcall_handler_t *h;
     int token = vmm_read_user_context(&vcpu->guest_state, USER_CONTEXT_EAX);
-    h = get_handle(vcpu->vmm, token);
+    h = get_handle(vcpu->parent_vmm, token);
     if(h == NULL) {
         DPRINTF(2, "Failed to find handler for token:%x\n", token);
         vmm_guest_exit_next_instruction(&vcpu->guest_state, vcpu->guest_vcpu);

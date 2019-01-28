@@ -30,7 +30,63 @@
 #include "vmm/interrupt.h"
 #include "vmm/platform/boot_guest.h"
 
+int vmm_resume_vcpu(vmm_vcpu_t *vcpu)
+{
+    if (NULL == vcpu) {
+        ZF_LOGE("Passed in vcpu is NULL");
+        return -1;
+    }
+
+    int error;
+    seL4_UserContext regs;
+    const int num_regs = sizeof(regs) / sizeof(seL4_Word);
+
+    error = seL4_TCB_ReadRegisters(vcpu->tcb, false, 0, num_regs, &regs);
+    if (error) {
+        ZF_LOGE("Failed to read registers for vcpu %d, error %d", vcpu->vcpu_id, error);
+        return -1;
+    }
+
+    /* We assume the VCPU has been correctly suspended with vmm_suspend_vcpu.
+     * Therefore, we step over the suspend instruction (0f 05) by incrementing
+     * the instruction pointer by 2 bytes
+     */
+#ifdef CONFIG_ARCH_X86_64
+    regs.rip += 2;
+#else
+    regs.eip += 2;
+#endif
+
+    /* Write the registers, resuming the thread in the process */
+    error = seL4_TCB_WriteRegisters(vcpu->tcb, true, 0, num_regs, &regs);
+    if (error) {
+        ZF_LOGE("Failed to write registers for vcpu %d, error %d", vcpu->vcpu_id, error);
+        return -1;
+    }
+
+    return 0;
+}
+
+int vmm_suspend_vcpu(vmm_vcpu_t *vcpu)
+{
+    if (NULL == vcpu) {
+        ZF_LOGE("Passed in vcpu is NULL");
+        return -1;
+    }
+
+    seL4_TCB_Suspend(vcpu->tcb);
+
+    return 0;
+}
+
 void vmm_sync_guest_context(vmm_vcpu_t *vcpu) {
+    if (vmm_get_current_apic_id() != vcpu->apic_id) {
+        DPRINTF(4, "WARNING: %s called from apic_id %d for vcpu with apic_id %d\n",
+                __func__, vmm_get_current_apic_id(), vcpu->apic_id);
+        vcpu->sync_guest_context = true;
+        return;
+    }
+
     if (IS_MACHINE_STATE_MODIFIED(vcpu->guest_state.machine.context)) {
         seL4_VCPUContext context;
         context.eax = vmm_read_user_context(&vcpu->guest_state, USER_CONTEXT_EAX);
@@ -47,20 +103,27 @@ void vmm_sync_guest_context(vmm_vcpu_t *vcpu) {
 }
 
 void vmm_reply_vm_exit(vmm_vcpu_t *vcpu) {
-    assert(vcpu->guest_state.exit.in_exit);
+    ZF_LOGF_IF(!vcpu->guest_state.exit.in_exit, "VCPU %d not in_exit\n", vcpu->vcpu_id);
 
     if (IS_MACHINE_STATE_MODIFIED(vcpu->guest_state.machine.context)) {
         vmm_sync_guest_context(vcpu);
     }
 
     /* Before we resume the guest, ensure there is no dirty state around */
-    assert(vmm_guest_state_no_modified(&vcpu->guest_state));
+    ZF_LOGF_IF(!vmm_guest_state_no_modified(&vcpu->guest_state), "VCPU %d was modified\n", vcpu->vcpu_id);
     vmm_guest_state_invalidate_all(&vcpu->guest_state);
 
     vcpu->guest_state.exit.in_exit = 0;
 }
 
 void vmm_sync_guest_state(vmm_vcpu_t *vcpu) {
+    if (vmm_get_current_apic_id() != vcpu->apic_id) {
+        DPRINTF(4, "WARNING: %s called from apic_id %d for vcpu with apic_id %d\n",
+                __func__, vmm_get_current_apic_id(), vcpu->apic_id);
+        vcpu->sync_guest_state = true;
+        return;
+    }
+
     vmm_guest_state_sync_cr0(&vcpu->guest_state, vcpu->guest_vcpu);
     vmm_guest_state_sync_cr3(&vcpu->guest_state, vcpu->guest_vcpu);
     vmm_guest_state_sync_cr4(&vcpu->guest_state, vcpu->guest_vcpu);
@@ -83,7 +146,7 @@ static void vmm_handle_vm_exit(vmm_vcpu_t *vcpu) {
         ZF_LOGF("Kernel failed to perform vmlaunch or vmresume, we have no recourse");
     }
 
-    if (!vcpu->vmm->vmexit_handlers[reason]) {
+    if (!vcpu->parent_vmm->vmexit_handlers[reason]) {
         printf("VM_FATAL_ERROR ::: vm exit handler is NULL for reason 0x%x.\n", reason);
         vmm_print_guest_context(0, vcpu);
         vcpu->online = 0;
@@ -91,7 +154,7 @@ static void vmm_handle_vm_exit(vmm_vcpu_t *vcpu) {
     }
 
     /* Call the handler. */
-    if (vcpu->vmm->vmexit_handlers[reason](vcpu)) {
+    if (vcpu->parent_vmm->vmexit_handlers[reason](vcpu)) {
         printf("VM_FATAL_ERROR ::: vmexit handler return error\n");
         vmm_print_guest_context(0, vcpu);
         vcpu->online = 0;
@@ -113,7 +176,7 @@ static void vmm_update_guest_state_from_interrupt(vmm_vcpu_t *vcpu, seL4_Word *m
 }
 
 static void vmm_update_guest_state_from_fault(vmm_vcpu_t *vcpu, seL4_Word *msg) {
-    assert(vcpu->guest_state.exit.in_exit);
+    ZF_LOGF_IF(!vcpu->guest_state.exit.in_exit, "VCPU (%d) not in_exit\n", vcpu->vcpu_id);
 
     /* The interrupt state is a subset of the fault state */
     vmm_update_guest_state_from_interrupt(vcpu, msg);
@@ -139,31 +202,35 @@ static void vmm_update_guest_state_from_fault(vmm_vcpu_t *vcpu, seL4_Word *msg) 
     MACHINE_STATE_READ(vcpu->guest_state.machine.context, context);
 }
 
-/* Entry point of of VMM main host module. */
-void vmm_run(vmm_t *vmm) {
+/* Entry point of VMM main host module. */
+void vmm_run_vcpu(vmm_vcpu_t *vcpu) {
     int UNUSED error;
-    DPRINTF(2, "VMM MAIN HOST MODULE STARTED\n");
+    DPRINTF(4, "VMM MAIN HOST MODULE STARTED FOR CORE %d\n", (int)vcpu->affinity);
 
-    for (int i = 0; i < vmm->num_vcpus; i++) {
-        vmm_vcpu_t *vcpu = &vmm->vcpus[i];
+    vcpu->apic_id = vmm_get_current_apic_id();
 
-        vcpu->guest_state.virt.interrupt_halt = 0;
-        vcpu->guest_state.exit.in_exit = 0;
+    vcpu->guest_state.virt.interrupt_halt = 0;
+    vcpu->guest_state.exit.in_exit = 0;
 
-        /* sync the existing guest state */
-        vmm_sync_guest_state(vcpu);
-        vmm_sync_guest_context(vcpu);
-        /* now invalidate everything */
-        assert(vmm_guest_state_no_modified(&vcpu->guest_state));
-        vmm_guest_state_invalidate_all(&vcpu->guest_state);
+    /* Wait for IPI to start secondary thread */
+    if (BOOT_VCPU != vcpu->vcpu_id) {
+        error = vmm_suspend_vcpu(vcpu);
+        ZF_LOGF_IF(-1 == error, "Failed to suspend vcpu %d\n", vcpu->vcpu_id);
     }
 
-    /* Start the boot vcpu guest thread running */
-    vmm->vcpus[BOOT_VCPU].online = 1;
+    /* sync the existing guest state */
+    vmm_sync_guest_state(vcpu);
+    vmm_sync_guest_context(vcpu);
+
+    /* now invalidate everything */
+    assert(vmm_guest_state_no_modified(&vcpu->guest_state));
+    vmm_guest_state_invalidate_all(&vcpu->guest_state);
+
+    /* Start the vcpu guest thread running */
+    vcpu->online = 1;
 
     /* Get our interrupt pending callback happening */
-    seL4_CPtr notification = vmm->plat_callbacks.get_async_event_notification();
-    error = seL4_TCB_BindNotification(simple_get_init_cap(&vmm->host_simple, seL4_CapInitThreadTCB), vmm->plat_callbacks.get_async_event_notification());
+    error = seL4_TCB_BindNotification(vcpu->tcb, vcpu->async_event_notification);
     assert(error == seL4_NoError);
 
     while (1) {
@@ -171,7 +238,15 @@ void vmm_run(vmm_t *vmm) {
         seL4_Word badge;
         int fault;
 
-        vmm_vcpu_t *vcpu = &vmm->vcpus[BOOT_VCPU];
+        if (vcpu->sync_guest_state) {
+            vmm_sync_guest_state(vcpu);
+            vcpu->sync_guest_state = false;
+        }
+
+        if (vcpu->sync_guest_context) {
+            vmm_sync_guest_context(vcpu);
+            vcpu->sync_guest_context = false;
+        }
 
         if (vcpu->online && !vcpu->guest_state.virt.interrupt_halt && !vcpu->guest_state.exit.in_exit) {
             seL4_SetMR(0, vmm_guest_state_get_eip(&vcpu->guest_state));
@@ -200,26 +275,36 @@ void vmm_run(vmm_t *vmm) {
                 vmm_update_guest_state_from_interrupt(vcpu, int_message);
             }
         } else {
-            seL4_Wait(notification, &badge);
+            seL4_Wait(vcpu->async_event_notification, &badge);
             fault = SEL4_VMENTER_RESULT_NOTIF;
         }
 
         if (fault == SEL4_VMENTER_RESULT_NOTIF) {
-            assert(badge >= vmm->num_vcpus);
-            /* assume interrupt */
-            int raise = vmm->plat_callbacks.do_async(badge);
-            if (raise == 0) {
-                /* Check if this caused PIC to generate interrupt */
-                vmm_check_external_interrupt(vmm);
+            if (0 == badge) {
+                /* This is an IPI, not a PIC interrupt */
+                vmm_vcpu_accept_interrupt(vcpu);
+                continue;
             }
 
-            continue;
+            if (BOOT_VCPU == vcpu->vcpu_id) {
+                assert(badge >= vcpu->parent_vmm->num_vcpus);
+                /* assume interrupt */
+                int raise = vcpu->plat_callbacks.do_async(badge);
+                if (raise == 0) {
+                    /* Check if this caused PIC to generate interrupt */
+                    vmm_check_external_interrupt(vcpu->parent_vmm);
+                }
+
+                continue;
+            }
         }
 
         /* Handle the vm exit */
         vmm_handle_vm_exit(vcpu);
 
-        vmm_check_external_interrupt(vmm);
+        if (BOOT_VCPU == vcpu->vcpu_id) {
+            vmm_check_external_interrupt(vcpu->parent_vmm);
+        }
 
         DPRINTF(5, "VMM main host blocking for another message...\n");
     }
@@ -265,12 +350,9 @@ seL4_CPtr vmm_create_async_event_notification_cap(vmm_t *vmm, seL4_Word badge) {
         return seL4_CapNull;
     }
 
-    // notification cap
-    seL4_CPtr ntfn = vmm->plat_callbacks.get_async_event_notification();
-
     // path to notification cap slot
     cspacepath_t ntfn_path;
-    vka_cspace_make_path(&vmm->vka, ntfn, &ntfn_path);
+    vka_cspace_make_path(&vmm->vka, vmm->vcpus[0].async_event_notification, &ntfn_path);
 
     // allocate slot to store copy
     cspacepath_t minted_ntfn_path = {};

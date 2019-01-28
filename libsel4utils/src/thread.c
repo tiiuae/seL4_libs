@@ -42,11 +42,16 @@ write_ipc_buffer_user_data(vka_t *vka, vspace_t *vspace, seL4_CPtr ipc_buf, uint
     return 0;
 }
 
-int sel4utils_configure_thread(vka_t *vka, vspace_t *parent, vspace_t *alloc, seL4_CPtr fault_endpoint,
-                               seL4_CNode cspace, seL4_Word cspace_root_data, sel4utils_thread_t *res)
+int sel4utils_configure_thread(vka_t *vka, vspace_t *parent, vspace_t *alloc,
+                               seL4_CPtr fault_endpoint, seL4_CNode cspace,
+                               seL4_Word cspace_root_data, sched_params_t *sched_params,
+                               sel4utils_thread_t *res)
 {
 
     sel4utils_thread_config_t config = {0};
+    if(NULL != sched_params) {
+        config.sched_params = *sched_params;
+    }
     config = thread_config_fault_endpoint(config, fault_endpoint);
     config = thread_config_cspace(config, cspace, cspace_root_data);
     config = thread_config_create_reply(config);
@@ -328,10 +333,10 @@ fault_handler(char *name, seL4_CPtr endpoint)
 int
 sel4utils_start_fault_handler(seL4_CPtr fault_endpoint, vka_t *vka, vspace_t *vspace,
                               seL4_CPtr cspace, seL4_Word cap_data, char *name,
-                              sel4utils_thread_t *res)
+                              sched_params_t *sched_params, sel4utils_thread_t *res)
 {
     int error = sel4utils_configure_thread(vka, vspace, vspace, 0, cspace,
-                                           cap_data, res);
+                                           cap_data, sched_params, res);
 
     if (error) {
         ZF_LOGE("Failed to configure fault handling thread\n");

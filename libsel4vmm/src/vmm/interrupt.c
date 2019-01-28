@@ -32,12 +32,12 @@ static void resume_guest(vmm_vcpu_t *vcpu) {
 
 static void inject_irq(vmm_vcpu_t *vcpu, int irq) {
     /* Inject a vectored exception into the guest */
-    assert(irq >= 16);
+    ZF_LOGF_IF(irq < 16, "Invalid IRQ (%d), vcpu_id: %d\n", irq, vcpu->vcpu_id);
     vmm_guest_state_set_control_entry(&vcpu->guest_state, BIT(31) | irq);
 }
 
 void vmm_inject_exception(vmm_vcpu_t *vcpu, int exception, int has_error, uint32_t error_code) {
-    assert(exception < 16);
+    ZF_LOGF_IF(exception >= 16, "Invalid exception (%d), vcpuid: %d\n", exception, vcpu->vcpu_id);
     // ensure we are not already injecting an interrupt or exception
     uint32_t int_control = vmm_guest_state_get_control_entry(&vcpu->guest_state);
     if ( (int_control & BIT(31)) != 0) {
@@ -73,7 +73,12 @@ int can_inject(vmm_vcpu_t *vcpu) {
 
 /* This function is called by the local apic when a new interrupt has occured. */
 void vmm_have_pending_interrupt(vmm_vcpu_t *vcpu) {
-    if (vmm_apic_has_interrupt(vcpu) >= 0) {
+
+    if (vmm_get_current_apic_id() != vcpu->apic_id) {
+        /* This would imply an IPI, so let the destination VCPU handle it */
+        seL4_Signal(vcpu->async_event_notification);
+    }
+    else if (vmm_apic_has_interrupt(vcpu) >= 0) {
         /* there is actually an interrupt to inject */
         if (can_inject(vcpu)) {
             if (vcpu->guest_state.virt.interrupt_halt) {
@@ -104,7 +109,7 @@ void vmm_have_pending_interrupt(vmm_vcpu_t *vcpu) {
 
 int vmm_pending_interrupt_handler(vmm_vcpu_t *vcpu) {
     /* see if there is actually a pending interrupt */
-    assert(can_inject(vcpu));
+    ZF_LOGF_IF(!can_inject(vcpu), "Cannot inject irq, vcpu_id: %d\n", vcpu->vcpu_id);
     int irq = vmm_apic_get_interrupt(vcpu);
     if (irq == -1) {
         resume_guest(vcpu);
@@ -122,41 +127,39 @@ int vmm_pending_interrupt_handler(vmm_vcpu_t *vcpu) {
 /* Start an AP vcpu after a sipi with the requested vector */
 void vmm_start_ap_vcpu(vmm_vcpu_t *vcpu, unsigned int sipi_vector)
 {
-    DPRINTF(1, "trying to start vcpu %d\n", vcpu->vcpu_id);
+    DPRINTF(4, "trying to start vcpu %d\n", vcpu->vcpu_id);
 
+    int error;
     uint16_t segment = sipi_vector * 0x100;
     uintptr_t eip = sipi_vector * 0x1000;
     guest_state_t *gs = &vcpu->guest_state;
 
+    /* EMULATE INSTRUCTIONS BASED ON BOOT VCPU */
+
     /* Emulate up to 100 bytes of trampoline code */
     uint8_t instr[TRAMPOLINE_LENGTH];
-    vmm_fetch_instruction(vcpu, eip, vmm_guest_state_get_cr3(gs, vcpu->guest_vcpu),
+    vmm_fetch_instruction(&vcpu->parent_vmm->vcpus[BOOT_VCPU], eip, vmm_guest_state_get_cr3(gs, vcpu->guest_vcpu),
             TRAMPOLINE_LENGTH, instr);
 
-    eip = vmm_emulate_realmode(&vcpu->vmm->guest_mem, instr, &segment, eip,
+    eip = vmm_emulate_realmode(&vcpu->parent_vmm->guest_mem, instr, &segment, eip,
             TRAMPOLINE_LENGTH, gs);
+
+    /* The next realmode instruction is jmp *eax, so lets just set eip to that value */
+    eip = vmm_read_user_context(&vcpu->guest_state, USER_CONTEXT_EAX);
 
     vmm_guest_state_set_eip(&vcpu->guest_state, eip);
 
-    vmm_sync_guest_context(vcpu);
-    vmm_sync_guest_state(vcpu);
-
-    assert(!"no tcb");
-//    seL4_TCB_Resume(vcpu->guest_tcb);
+    error = vmm_resume_vcpu(vcpu);
+    ZF_LOGF_IF(-1 == error, "Failed to resume vcpu %d", vcpu->vcpu_id);
 }
 
-/* Got interrupt(s) from PIC, propagate to relevant vcpu lapic */
+/* Got interrupt(s) from PIC, propagate to boot vcpu lapic */
 void vmm_check_external_interrupt(vmm_t *vmm)
 {
-    /* TODO if all lapics are enabled, store which lapic
-       (only one allowed) receives extints, and short circuit this */
-    if (vmm->plat_callbacks.has_interrupt() != -1) {
-        for (int i = 0; i < vmm->num_vcpus; i++) {
-            vmm_vcpu_t *vcpu = &vmm->vcpus[i];
-            if (vmm_apic_accept_pic_intr(vcpu)) {
-                vmm_vcpu_accept_interrupt(vcpu);
-                break; /* Only one VCPU can take a PIC interrupt */
-            }
+    vmm_vcpu_t *vcpu = &vmm->vcpus[BOOT_VCPU];
+    if (vcpu->plat_callbacks.has_interrupt() != -1) {
+        if (vmm_apic_accept_pic_intr(vcpu)) {
+            vmm_vcpu_accept_interrupt(vcpu);
         }
     }
 }

@@ -47,14 +47,14 @@
 #define MAX_APIC_VECTOR         256
 #define APIC_VECTORS_PER_REG        32
 
-inline static int pic_get_interrupt(vmm_t *vmm)
+inline static int pic_get_interrupt(vmm_vcpu_t *vcpu)
 {
-    return vmm->plat_callbacks.get_interrupt();
+    return vcpu->plat_callbacks.get_interrupt();
 }
 
-inline static int pic_has_interrupt(vmm_t *vmm)
+inline static int pic_has_interrupt(vmm_vcpu_t *vcpu)
 {
-    return vmm->plat_callbacks.has_interrupt();
+    return vcpu->plat_callbacks.has_interrupt();
 }
 
 struct vmm_lapic_irq {
@@ -489,7 +489,7 @@ int vmm_irq_delivery_to_apic(vmm_vcpu_t *src_vcpu, struct vmm_lapic_irq *irq, un
 {
     int i, r = -1;
     vmm_lapic_t *src = src_vcpu->lapic;
-    vmm_t *vmm = src_vcpu->vmm;
+    vmm_t *vmm = src_vcpu->parent_vmm;
 
     vmm_vcpu_t *lowest = NULL;
 
@@ -1016,7 +1016,7 @@ int vmm_apic_get_interrupt(vmm_vcpu_t *vcpu)
     int vector = vmm_apic_has_interrupt(vcpu);
 
     if (vector == 1) {
-        return pic_get_interrupt(vcpu->vmm);
+        return pic_get_interrupt(vcpu);
     } else if (vector == -1) {
         return -1;
     }
@@ -1033,7 +1033,7 @@ int vmm_apic_has_interrupt(vmm_vcpu_t *vcpu)
     vmm_lapic_t *apic = vcpu->lapic;
     int highest_irr;
 
-    if (vmm_apic_accept_pic_intr(vcpu) && pic_has_interrupt(vcpu->vmm)) {
+    if (vmm_apic_accept_pic_intr(vcpu) && pic_has_interrupt(vcpu)) {
         return 1;
     }
 

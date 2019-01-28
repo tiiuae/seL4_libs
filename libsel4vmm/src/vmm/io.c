@@ -69,22 +69,22 @@ int vmm_io_instruction_handler(vmm_vcpu_t *vcpu) {
     rep = (exit_qualification & 0x20) >> 5;
 
     DPRINTF(4, "vm exit io request: string %d  in %d rep %d  port no 0x%x (%s) size %d\n", string,
-            is_in, rep, port_no, vmm_debug_io_portno_desc(&vcpu->vmm->io_port, port_no), size);
+            is_in, rep, port_no, vmm_debug_io_portno_desc(&vcpu->parent_vmm->io_port, port_no), size);
 
     /*FIXME: does not support string and rep instructions*/
     if (string || rep) {
-        DPRINTF(0, "vm exit io request: FIXME: does not support string and rep instructions");
-        DPRINTF(0, "vm exit io ERROR: string %d  in %d rep %d  port no 0x%x (%s) size %d\n", 0,
-                is_in, 0, port_no, vmm_debug_io_portno_desc(&vcpu->vmm->io_port, port_no), size);
+        DPRINTF(0, "vm exit io request: FIXME: does not support string and rep instructions\n");
+        DPRINTF(0, "vm exit io ERROR: string %d  in %d rep %d  port no 0x%x (%s) size %d\n", string,
+                is_in, rep, port_no, vmm_debug_io_portno_desc(&vcpu->parent_vmm->io_port, port_no), size);
         return -1;
     }
 
-    ioport_range_t *port = search_port(&vcpu->vmm->io_port, port_no);
+    ioport_range_t *port = search_port(&vcpu->parent_vmm->io_port, port_no);
     if (!port) {
         static int last_port = -1;
         if (last_port != port_no) {
             DPRINTF(3, "vm exit io request: WARNING - ignoring unsupported ioport 0x%x (%s)\n", port_no,
-                    vmm_debug_io_portno_desc(&vcpu->vmm->io_port, port_no));
+                    vmm_debug_io_portno_desc(&vcpu->parent_vmm->io_port, port_no));
             last_port = port_no;
         }
         if (is_in) {
@@ -122,7 +122,7 @@ int vmm_io_instruction_handler(vmm_vcpu_t *vcpu) {
     if (ret) {
         ZF_LOGE("vm exit io request: handler returned error.");
         ZF_LOGE("vm exit io ERROR: string %d  in %d rep %d  port no 0x%x (%s) size %d", 0,
-                is_in, 0, port_no, vmm_debug_io_portno_desc(&vcpu->vmm->io_port, port_no), size);
+                is_in, 0, port_no, vmm_debug_io_portno_desc(&vcpu->parent_vmm->io_port, port_no), size);
         return -1;
     }
 
