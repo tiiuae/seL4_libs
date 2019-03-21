@@ -45,19 +45,19 @@ sel4platsupport_io_port_in(void *cookie, uint32_t port, int io_size, uint32_t *r
     switch (io_size) {
     case 1: {
         seL4_X86_IOPort_In8_t x = seL4_X86_IOPort_In8(path.capPtr, port);
-        *result = x.result;
+        memcpy(result, &x.result, io_size);
         error = x.error;
         break;
     }
     case 2: {
         seL4_X86_IOPort_In16_t x = seL4_X86_IOPort_In16(path.capPtr, port);
-        *result = x.result;
+        memcpy(result, &x.result, io_size);
         error = x.error;
         break;
     }
     case 4: {
         seL4_X86_IOPort_In32_t x = seL4_X86_IOPort_In32(path.capPtr, port);
-        *result = x.result;
+        memcpy(result, &x.result, io_size);
         error = x.error;
         break;
     }

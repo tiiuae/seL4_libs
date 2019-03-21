@@ -81,4 +81,4 @@ file(GLOB sources src/vmm/*.c src/platform/*.c src/driver/*.c src/manager/*.c sr
 add_library(sel4vmm STATIC EXCLUDE_FROM_ALL ${sources})
 
 target_include_directories(sel4vmm PUBLIC include)
-target_link_libraries(sel4vmm Configuration muslc sel4 sel4utils pci sel4allocman ethdrivers platsupport)
+target_link_libraries(sel4vmm Configuration muslc sel4 sel4utils pci sel4allocman ethdrivers satadrivers platsupport)
