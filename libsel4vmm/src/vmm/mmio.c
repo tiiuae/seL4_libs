@@ -38,7 +38,7 @@ int vmm_mmio_init(vmm_mmio_list_t *list) {
 }
 
 // Returns 0 if the exit was handled
-int vmm_mmio_exit_handler(vmm_vcpu_t *vcpu, uintptr_t addr, unsigned int qualification) {
+int vmm_mmio_exit_handler(vmm_vcpu_t *vcpu, uintptr_t addr, seL4_Word qualification) {
     int read = EPT_VIOL_READ(qualification);
     int write = EPT_VIOL_WRITE(qualification);
     int fetch = EPT_VIOL_FETCH(qualification);
@@ -77,25 +77,25 @@ int vmm_mmio_exit_handler(vmm_vcpu_t *vcpu, uintptr_t addr, unsigned int qualifi
                     instr_len, ibuf);
 
             int reg;
-            uint32_t imm;
+            seL4_Word imm;
             int size;
             vmm_decode_instruction(ibuf, instr_len, &reg, &imm, &size);
 assert(size == 4); // we don't support non-32 bit accesses. TODO fix this
 
             // Call handler
             if (read) {
-                uint32_t result;
+                seL4_Word result;
                 range->read_handler(vcpu, range->cookie, addr - range->start, size, &result);
 
                 // Inject into register
-                assert(reg >= 0 && reg < 8);
+                assert(reg >= 0 && reg < NUM_USER_CONTEXT_REGS);
                 int vcpu_reg = vmm_decoder_reg_mapw[reg];
                 assert(vcpu_reg >= 0);
                 vmm_set_user_context(&vcpu->guest_state,
                         vcpu_reg, result);
             } else {
                 // Get value to pass in
-                uint32_t value = imm;
+                seL4_Word value = imm;
                 assert (reg >= 0);
                 int vcpu_reg =  vmm_decoder_reg_mapw[reg];
                 assert(vcpu_reg >= 0);

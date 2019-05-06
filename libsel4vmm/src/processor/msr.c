@@ -21,6 +21,34 @@
 #include "vmm/vmm.h"
 #include "vmm/processor/msr.h"
 
+#ifdef CONFIG_ARCH_X86_64
+
+static seL4_Word
+vmm_msr_read(seL4_CPtr vcpu, unsigned int field) {
+
+    seL4_X86_VCPU_ReadMSR_t result;
+
+    assert(vcpu);
+
+    result = seL4_X86_VCPU_ReadMSR(vcpu, (seL4_Word)field);
+    assert(result.error == seL4_NoError);
+
+    return result.value;
+}
+
+static void
+vmm_msr_write(seL4_CPtr vcpu, unsigned int field, seL4_Word value) {
+
+    seL4_X86_VCPU_WriteMSR_t result;
+
+    assert(vcpu);
+
+    result = seL4_X86_VCPU_WriteMSR(vcpu, (seL4_Word)field, value);
+    assert(result.error == seL4_NoError);
+}
+
+#endif
+
 int vmm_rdmsr_handler(vmm_vcpu_t *vcpu) {
 
     int ret = 0;
@@ -67,6 +95,19 @@ int vmm_rdmsr_handler(vmm_vcpu_t *vcpu) {
             data = vmm_lapic_get_base_msr(vcpu);
             break;
 
+#ifdef CONFIG_ARCH_X86_64
+        case MSR_EFER:
+            data = vmm_vmcs_read(vcpu->guest_vcpu, VMX_GUEST_EFER);
+            break;
+
+        case MSR_STAR:
+        case MSR_LSTAR:
+        case MSR_CSTAR:
+        case MSR_SYSCALL_MASK:
+            data = vmm_msr_read(vcpu->guest_vcpu, msr_no);
+            break;
+#endif
+
         default:
             DPRINTF(1, "rdmsr WARNING unsupported msr_no 0x%x\n", msr_no);
             // generate a GP fault
@@ -111,6 +152,19 @@ int vmm_wrmsr_handler(vmm_vcpu_t *vcpu) {
         case MSR_IA32_APICBASE:
             vmm_lapic_set_base_msr(vcpu, val_low);
             break;
+
+#ifdef CONFIG_ARCH_X86_64
+        case MSR_EFER:
+            vmm_vmcs_write(vcpu->guest_vcpu, VMX_GUEST_EFER, val_low);
+            break;
+
+        case MSR_STAR:
+        case MSR_LSTAR:
+        case MSR_CSTAR:
+        case MSR_SYSCALL_MASK:
+            vmm_msr_write(vcpu->guest_vcpu, msr_no, (seL4_Word)(((seL4_Word)val_high << 32ull) | val_low));
+            break;
+#endif
 
         default:
             DPRINTF(1, "wrmsr WARNING unsupported msr_no 0x%x\n", msr_no);

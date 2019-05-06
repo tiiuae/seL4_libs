@@ -18,6 +18,7 @@ Author: W.A. */
 
 #include "vmm/debug.h"
 #include "vmm/platform/acpi.h"
+#include "vmm/platform/hpet.h"
 #include "vmm/platform/guest_memory.h"
 #include "vmm/platform/guest_vspace.h"
 #include "vmm/processor/apicdef.h"
@@ -121,6 +122,70 @@ int make_guest_acpi_tables(vmm_t *vmm) {
 
     // Could set up other tables here...
 
+#ifdef CONFIG_VMM_USE_HPET
+    // HPET
+    int hpet_size = sizeof(acpi_hpet_t);
+    acpi_hpet_t *hpet = calloc(1, hpet_size);
+    assert(NULL != hpet);
+
+    acpi_fill_table_head(&hpet->header, "HPET", 1);
+
+    hpet->event_timer_block_id = HPET_DEFAULT_TBID;
+    hpet->base_address.address = HPET_DEFAULT_PADDR;
+
+    hpet->header.length = hpet_size;
+    hpet->header.checksum = acpi_calc_checksum((char *)hpet, hpet_size);
+
+    tables[num_tables] = hpet;
+    table_sizes[num_tables] = hpet_size;
+
+    num_tables++;
+#endif
+
+    // DSDT
+    int dsdt_size = sizeof(acpi_dsdt_t);
+    acpi_dsdt_t *dsdt = malloc(dsdt_size);
+    assert(NULL != dsdt);
+
+    acpi_fill_table_head(&dsdt->header, "DSDT", 1);
+
+    dsdt->header.length = dsdt_size;
+    dsdt->header.checksum = acpi_calc_checksum((char *)dsdt, dsdt_size);
+
+    tables[num_tables] = dsdt;
+    table_sizes[num_tables] = dsdt_size;
+
+    int dsdt_index = num_tables;
+
+    num_tables++;
+
+    // FADT
+    int fadt_size = sizeof(acpi_fadt_t);
+    acpi_fadt_t *fadt = calloc(1, fadt_size);
+    assert(NULL != fadt);
+
+    acpi_fill_table_head(&fadt->header, "FACP", 1);
+
+    fadt->header.length = fadt_size;
+
+    /* Hardcode some necessary data; Addresses taken from QEMU.
+     * Info may vary on hardware platforms, but differences don't seem to affect
+     * the guest
+     */
+    fadt->pm1a_evt_blk = 0x600;
+    fadt->pm1_evt_len = 0x4;
+    fadt->pm1a_cnt_blk = 0x604;
+    fadt->pm1_cnt_len = 0x2;
+
+    fadt->sci_int = 9;
+
+    tables[num_tables] = fadt;
+    table_sizes[num_tables] = fadt_size;
+
+    int fadt_index = num_tables;
+
+    num_tables++;
+
     // XSDT
     size_t xsdt_size = sizeof(acpi_xsdt_t) + sizeof(uint64_t) * (num_tables - 1);
 
@@ -153,6 +218,14 @@ int make_guest_acpi_tables(vmm_t *vmm) {
     // Copy all the tables to guest
     table_paddr = xsdt_addr;
     for (int i = 0; i < num_tables; i++) {
+
+        // Need to fill in DSDT address
+        if (i == fadt_index) {
+            fadt->dsdt_address = table_paddr - table_sizes[dsdt_index];
+            fadt->x_dsdt_address = table_paddr - table_sizes[dsdt_index];
+            fadt->header.checksum = acpi_calc_checksum((char *)fadt, fadt_size);
+        }
+
         DPRINTF(2, "ACPI table \"%.4s\", addr = %p, size = %zu bytes\n",
                 (char *)tables[i], (void*)table_paddr, table_sizes[i]);
         err = vmm_guest_vspace_touch(&vmm->guest_mem.vspace, table_paddr,

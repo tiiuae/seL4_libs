@@ -18,7 +18,15 @@
 #include "vmm/vmm.h"
 #include "vmm/platform/vmcs.h"
 
-int vmm_vmcs_read(seL4_CPtr vcpu, seL4_Word field) {
+#ifdef CONFIG_ARCH_X86_64
+#define CS_ACCESS_RIGHTS AR(G) | AR(L) | AR(P) | AR(S) | AR_T(BUSY_TSS)
+#define LDTR_ACCESS_RIGHTS AR(P) | AR_T(LDT)
+#else
+#define CS_ACCESS_RIGHTS AR(G) | AR(DB) | AR(P) | AR(S) | AR_T(BUSY_TSS)
+#define LDTR_ACCESS_RIGHTS ACCESS_RIGHTS_UNUSABLE
+#endif
+
+seL4_Word vmm_vmcs_read(seL4_CPtr vcpu, seL4_Word field) {
 
     seL4_X86_VCPU_ReadVMCS_t UNUSED result;
 
@@ -39,8 +47,43 @@ void vmm_vmcs_write(seL4_CPtr vcpu, seL4_Word field, seL4_Word value) {
     assert(result.error == seL4_NoError);
 }
 
+/*init the vmcs structure for a 32-bit guest os thread*/
+static void vmm_vmcs_init_32_bit_guest(vmm_vcpu_t *vcpu) {
+
+    assert(vcpu);
+
+    vmm_vmcs_write(vcpu->guest_vcpu, VMX_GUEST_FS_LIMIT, 0);
+    vmm_vmcs_write(vcpu->guest_vcpu, VMX_GUEST_GS_LIMIT, 0);
+    vmm_vmcs_write(vcpu->guest_vcpu, VMX_GUEST_TR_LIMIT, 0x0);
+
+    vmm_vmcs_write(vcpu->guest_vcpu, VMX_GUEST_FS_ACCESS_RIGHTS, ACCESS_RIGHTS_UNUSABLE);
+    vmm_vmcs_write(vcpu->guest_vcpu, VMX_GUEST_GS_ACCESS_RIGHTS, ACCESS_RIGHTS_UNUSABLE);
+
+
+    vcpu->guest_state.machine.control_ppc = VMX_CONTROL_PPC_HLT_EXITING | VMX_CONTROL_PPC_CR3_LOAD_EXITING | VMX_CONTROL_PPC_CR3_STORE_EXITING;
+}
+
+/*init the vmcs structure for a 32-bit guest os thread*/
+static void vmm_vmcs_init_64_bit_guest(vmm_vcpu_t *vcpu) {
+
+    assert(vcpu);
+
+    vmm_vmcs_write(vcpu->guest_vcpu, VMX_GUEST_FS_LIMIT, ~0u);
+    vmm_vmcs_write(vcpu->guest_vcpu, VMX_GUEST_GS_LIMIT, ~0u);
+    vmm_vmcs_write(vcpu->guest_vcpu, VMX_GUEST_TR_LIMIT, 0xFF);
+
+    /* Allows guest to use FS and GS registers */
+    vmm_vmcs_write(vcpu->guest_vcpu, VMX_GUEST_FS_ACCESS_RIGHTS, DEFAULT_ACCESS_RIGHTS);
+    vmm_vmcs_write(vcpu->guest_vcpu, VMX_GUEST_GS_ACCESS_RIGHTS, DEFAULT_ACCESS_RIGHTS);
+
+    vcpu->guest_state.machine.control_ppc = VMX_CONTROL_PPC_HLT_EXITING;
+}
+
 /*init the vmcs structure for a guest os thread*/
 void vmm_vmcs_init_guest(vmm_vcpu_t *vcpu) {
+
+    assert(vcpu);
+
     vmm_vmcs_write(vcpu->guest_vcpu, VMX_GUEST_ES_SELECTOR, 2 << 3);
     vmm_vmcs_write(vcpu->guest_vcpu, VMX_GUEST_CS_SELECTOR, BIT(3));
     vmm_vmcs_write(vcpu->guest_vcpu, VMX_GUEST_SS_SELECTOR, 2 << 3);
@@ -49,24 +92,19 @@ void vmm_vmcs_init_guest(vmm_vcpu_t *vcpu) {
     vmm_vmcs_write(vcpu->guest_vcpu, VMX_GUEST_GS_SELECTOR, 0);
     vmm_vmcs_write(vcpu->guest_vcpu, VMX_GUEST_LDTR_SELECTOR, 0);
     vmm_vmcs_write(vcpu->guest_vcpu, VMX_GUEST_TR_SELECTOR, 0);
-    vmm_vmcs_write(vcpu->guest_vcpu, VMX_GUEST_ES_LIMIT, ~0);
-    vmm_vmcs_write(vcpu->guest_vcpu, VMX_GUEST_CS_LIMIT, ~0);
-    vmm_vmcs_write(vcpu->guest_vcpu, VMX_GUEST_SS_LIMIT, ~0);
-    vmm_vmcs_write(vcpu->guest_vcpu, VMX_GUEST_DS_LIMIT, ~0);
-    vmm_vmcs_write(vcpu->guest_vcpu, VMX_GUEST_FS_LIMIT, 0);
-    vmm_vmcs_write(vcpu->guest_vcpu, VMX_GUEST_GS_LIMIT, 0);
+    vmm_vmcs_write(vcpu->guest_vcpu, VMX_GUEST_ES_LIMIT, ~0u);
+    vmm_vmcs_write(vcpu->guest_vcpu, VMX_GUEST_CS_LIMIT, ~0u);
+    vmm_vmcs_write(vcpu->guest_vcpu, VMX_GUEST_SS_LIMIT, ~0u);
+    vmm_vmcs_write(vcpu->guest_vcpu, VMX_GUEST_DS_LIMIT, ~0u);
     vmm_vmcs_write(vcpu->guest_vcpu, VMX_GUEST_LDTR_LIMIT, 0);
-    vmm_vmcs_write(vcpu->guest_vcpu, VMX_GUEST_TR_LIMIT, 0x0);
     vmm_vmcs_write(vcpu->guest_vcpu, VMX_GUEST_GDTR_LIMIT, 0x0);
     vmm_vmcs_write(vcpu->guest_vcpu, VMX_GUEST_IDTR_LIMIT, 0);
-    vmm_vmcs_write(vcpu->guest_vcpu, VMX_GUEST_ES_ACCESS_RIGHTS, 0xC093);
-    vmm_vmcs_write(vcpu->guest_vcpu, VMX_GUEST_CS_ACCESS_RIGHTS, 0xC09B);
-    vmm_vmcs_write(vcpu->guest_vcpu, VMX_GUEST_SS_ACCESS_RIGHTS, 0xC093);
-    vmm_vmcs_write(vcpu->guest_vcpu, VMX_GUEST_DS_ACCESS_RIGHTS, 0xC093);
-    vmm_vmcs_write(vcpu->guest_vcpu, VMX_GUEST_FS_ACCESS_RIGHTS, BIT(16));
-    vmm_vmcs_write(vcpu->guest_vcpu, VMX_GUEST_GS_ACCESS_RIGHTS, BIT(16));
-    vmm_vmcs_write(vcpu->guest_vcpu, VMX_GUEST_LDTR_ACCESS_RIGHTS, BIT(16));
-    vmm_vmcs_write(vcpu->guest_vcpu, VMX_GUEST_TR_ACCESS_RIGHTS, 0x8B);
+    vmm_vmcs_write(vcpu->guest_vcpu, VMX_GUEST_CS_ACCESS_RIGHTS, CS_ACCESS_RIGHTS);
+    vmm_vmcs_write(vcpu->guest_vcpu, VMX_GUEST_ES_ACCESS_RIGHTS, DEFAULT_ACCESS_RIGHTS);
+    vmm_vmcs_write(vcpu->guest_vcpu, VMX_GUEST_SS_ACCESS_RIGHTS, DEFAULT_ACCESS_RIGHTS);
+    vmm_vmcs_write(vcpu->guest_vcpu, VMX_GUEST_DS_ACCESS_RIGHTS, DEFAULT_ACCESS_RIGHTS);
+    vmm_vmcs_write(vcpu->guest_vcpu, VMX_GUEST_TR_ACCESS_RIGHTS, DEFAULT_TR_ACCESS_RIGHTS);
+    vmm_vmcs_write(vcpu->guest_vcpu, VMX_GUEST_LDTR_ACCESS_RIGHTS, LDTR_ACCESS_RIGHTS);
     vmm_vmcs_write(vcpu->guest_vcpu, VMX_GUEST_SYSENTER_CS, 0);
     vmm_vmcs_write(vcpu->guest_vcpu, VMX_CONTROL_CR0_MASK, vcpu->guest_state.virt.cr.cr0_mask);
     vmm_vmcs_write(vcpu->guest_vcpu, VMX_CONTROL_CR4_MASK, vcpu->guest_state.virt.cr.cr4_mask);
@@ -85,7 +123,13 @@ void vmm_vmcs_init_guest(vmm_vcpu_t *vcpu) {
     vmm_vmcs_write(vcpu->guest_vcpu, VMX_GUEST_RFLAGS, BIT(1));
     vmm_vmcs_write(vcpu->guest_vcpu, VMX_GUEST_SYSENTER_ESP, 0);
     vmm_vmcs_write(vcpu->guest_vcpu, VMX_GUEST_SYSENTER_EIP, 0);
-    vcpu->guest_state.machine.control_ppc = VMX_CONTROL_PPC_HLT_EXITING | VMX_CONTROL_PPC_CR3_LOAD_EXITING | VMX_CONTROL_PPC_CR3_STORE_EXITING;
+
+#ifdef CONFIG_ARCH_X86_64
+    vmm_vmcs_init_64_bit_guest(vcpu);
+#else
+    vmm_vmcs_init_32_bit_guest(vcpu);
+#endif
+
     vmm_vmcs_write(vcpu->guest_vcpu, VMX_CONTROL_PRIMARY_PROCESSOR_CONTROLS, vcpu->guest_state.machine.control_ppc);
     vcpu->guest_state.machine.control_entry = vmm_vmcs_read(vcpu->guest_vcpu, VMX_CONTROL_ENTRY_INTERRUPTION_INFO);
 

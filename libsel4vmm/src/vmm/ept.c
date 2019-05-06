@@ -26,7 +26,7 @@
 int vmm_ept_violation_handler(vmm_vcpu_t *vcpu) {
 
     uintptr_t guest_phys = vmm_guest_exit_get_physical(&vcpu->guest_state);
-    unsigned int qualification = vmm_guest_exit_get_qualification(&vcpu->guest_state);
+    seL4_Word qualification = vmm_guest_exit_get_qualification(&vcpu->guest_state);
 
     int e = vmm_mmio_exit_handler(vcpu, guest_phys, qualification);
 
@@ -38,8 +38,8 @@ int vmm_ept_violation_handler(vmm_vcpu_t *vcpu) {
         printf(COLOUR_R "!!!!!!!! ALERT :: GUEST OS PAGE FAULT !!!!!!!!\n");
         printf("    Guest OS VMExit due to EPT Violation:\n");
         printf("        Linear address 0x%x.\n", linear_address);
-        printf("        Guest-Physical address 0x%x.\n", vmm_guest_exit_get_physical(&vcpu->guest_state));
-        printf("        Instruction pointer 0x%x.\n", vmm_guest_state_get_eip(&vcpu->guest_state));
+        printf("        Guest-Physical address 0x%lx.\n", (seL4_Word)vmm_guest_exit_get_physical(&vcpu->guest_state));
+        printf("        Instruction pointer 0x%lx.\n", (seL4_Word)vmm_guest_state_get_eip(&vcpu->guest_state));
         printf("    This is most likely due to a bug or misconfiguration.\n" COLOUR_RESET);
 
         if (!config_set(CONFIG_VMM_IGNORE_EPT_VIOLATION)) {

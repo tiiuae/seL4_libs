@@ -793,7 +793,7 @@ static int apic_reg_write(vmm_vcpu_t *vcpu, uint32_t reg, uint32_t val)
 }
 
 void vmm_apic_mmio_write(vmm_vcpu_t *vcpu, void *cookie, uint32_t offset,
-        int len, const uint32_t data)
+        int len, const seL4_Word data)
 {
     (void)cookie;
 
@@ -852,7 +852,7 @@ static int apic_reg_read(vmm_lapic_t *apic, uint32_t offset, int len,
 }
 
 void vmm_apic_mmio_read(vmm_vcpu_t *vcpu, void *cookie, uint32_t offset,
-        int len, uint32_t *data)
+        int len, seL4_Word *data)
 {
     vmm_lapic_t *apic = vcpu->lapic;
     (void)cookie;

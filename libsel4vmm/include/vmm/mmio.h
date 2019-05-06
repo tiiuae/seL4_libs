@@ -17,9 +17,9 @@ typedef struct vmm_vcpu vmm_vcpu_t;
 // Deals with ranges of memory mapped io for emulated devices
 
 typedef void (*vmm_mmio_read_fn)(vmm_vcpu_t * vcpu, void *cookie,
-        uint32_t offset, int size, uint32_t *result);
+        uint32_t offset, int size, seL4_Word *result);
 typedef void (*vmm_mmio_write_fn)(vmm_vcpu_t *vcpu, void *cookie,
-        uint32_t offset, int size, uint32_t value);
+        uint32_t offset, int size, seL4_Word value);
 
 typedef struct vmm_mmio_range {
     uintptr_t start;
@@ -43,7 +43,7 @@ int vmm_mmio_init(vmm_mmio_list_t *list);
 
 // Try to handle an exit with mmio
 // Returns 0 if handled, or -1 otherwise
-int vmm_mmio_exit_handler(vmm_vcpu_t *vcpu, uintptr_t addr, unsigned int qualification);
+int vmm_mmio_exit_handler(vmm_vcpu_t *vcpu, uintptr_t addr, seL4_Word qualification);
 
 int vmm_mmio_add_handler(vmm_mmio_list_t *list, uintptr_t start, uintptr_t end,
         void *cookie, const char *name,

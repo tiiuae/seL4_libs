@@ -30,6 +30,8 @@
 #include "vmm/interrupt.h"
 #include "vmm/platform/boot_guest.h"
 
+#define VMM_INITIAL_STACK 0x96000
+
 int vmm_resume_vcpu(vmm_vcpu_t *vcpu)
 {
     if (NULL == vcpu) {
@@ -96,6 +98,16 @@ void vmm_sync_guest_context(vmm_vcpu_t *vcpu) {
         context.esi = vmm_read_user_context(&vcpu->guest_state, USER_CONTEXT_ESI);
         context.edi = vmm_read_user_context(&vcpu->guest_state, USER_CONTEXT_EDI);
         context.ebp = vmm_read_user_context(&vcpu->guest_state, USER_CONTEXT_EBP);
+#ifdef CONFIG_ARCH_X86_64
+        context.r8 = vmm_read_user_context(&vcpu->guest_state, USER_CONTEXT_R8);
+        context.r9 = vmm_read_user_context(&vcpu->guest_state, USER_CONTEXT_R9);
+        context.r10 = vmm_read_user_context(&vcpu->guest_state, USER_CONTEXT_R10);
+        context.r11 = vmm_read_user_context(&vcpu->guest_state, USER_CONTEXT_R11);
+        context.r12 = vmm_read_user_context(&vcpu->guest_state, USER_CONTEXT_R12);
+        context.r13 = vmm_read_user_context(&vcpu->guest_state, USER_CONTEXT_R13);
+        context.r14 = vmm_read_user_context(&vcpu->guest_state, USER_CONTEXT_R14);
+        context.r15 = vmm_read_user_context(&vcpu->guest_state, USER_CONTEXT_R15);
+#endif
         seL4_X86_VCPU_WriteRegisters(vcpu->guest_vcpu, &context);
         /* Sync our context */
         MACHINE_STATE_SYNC(vcpu->guest_state.machine.context);
@@ -132,6 +144,14 @@ void vmm_sync_guest_state(vmm_vcpu_t *vcpu) {
     vmm_guest_state_sync_gdt_base(&vcpu->guest_state, vcpu->guest_vcpu);
     vmm_guest_state_sync_gdt_limit(&vcpu->guest_state, vcpu->guest_vcpu);
     vmm_guest_state_sync_cs_selector(&vcpu->guest_state, vcpu->guest_vcpu);
+#ifdef CONFIG_ARCH_X86_64
+    vmm_guest_state_sync_ss_selector(&vcpu->guest_state, vcpu->guest_vcpu);
+    vmm_guest_state_sync_ds_selector(&vcpu->guest_state, vcpu->guest_vcpu);
+    vmm_guest_state_sync_es_selector(&vcpu->guest_state, vcpu->guest_vcpu);
+    vmm_guest_state_sync_fs_selector(&vcpu->guest_state, vcpu->guest_vcpu);
+    vmm_guest_state_sync_gs_selector(&vcpu->guest_state, vcpu->guest_vcpu);
+    vmm_guest_state_sync_esp(&vcpu->guest_state, vcpu->guest_vcpu);
+#endif
     vmm_guest_state_sync_entry_exception_error_code(&vcpu->guest_state, vcpu->guest_vcpu);
 }
 
@@ -199,6 +219,16 @@ static void vmm_update_guest_state_from_fault(vmm_vcpu_t *vcpu, seL4_Word *msg) 
     context.esi = msg[SEL4_VMENTER_FAULT_ESI];
     context.edi = msg[SEL4_VMENTER_FAULT_EDI];
     context.ebp = msg[SEL4_VMENTER_FAULT_EBP];
+#ifdef CONFIG_ARCH_X86_64
+    context.r8 = msg[SEL4_VMENTER_FAULT_R8];
+    context.r9 = msg[SEL4_VMENTER_FAULT_R9];
+    context.r10 = msg[SEL4_VMENTER_FAULT_R10];
+    context.r11 = msg[SEL4_VMENTER_FAULT_R11];
+    context.r12 = msg[SEL4_VMENTER_FAULT_R12];
+    context.r13 = msg[SEL4_VMENTER_FAULT_R13];
+    context.r14 = msg[SEL4_VMENTER_FAULT_R14];
+    context.r15 = msg[SEL4_VMENTER_FAULT_R15];
+#endif
     MACHINE_STATE_READ(vcpu->guest_state.machine.context, context);
 }
 
@@ -208,6 +238,15 @@ void vmm_run_vcpu(vmm_vcpu_t *vcpu) {
     DPRINTF(4, "VMM MAIN HOST MODULE STARTED FOR CORE %d\n", (int)vcpu->affinity);
 
     vcpu->apic_id = vmm_get_current_apic_id();
+
+#ifdef CONFIG_ARCH_X86_64
+    /* On Linux Kernels below 4.7, startup_64 does not setup a stack before
+     * calling verify_cpu, which causes a triple fault. This sets an initial
+     * stack in low memory. For Linux kernels > 4.7, this will simply get
+     * overwritten
+     */
+    vmm_guest_state_set_esp(&vcpu->guest_state, VMM_INITIAL_STACK);
+#endif
 
     vcpu->guest_state.virt.interrupt_halt = 0;
     vcpu->guest_state.exit.in_exit = 0;

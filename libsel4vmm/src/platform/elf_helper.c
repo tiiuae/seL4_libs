@@ -20,17 +20,24 @@
 */
 int vmm_read_elf_headers(void *buf, vmm_t *vmm, FILE *file, size_t buf_size) {
 	size_t result;
-	if(buf_size < sizeof(struct Elf32_Header))
+	if(buf_size < sizeof(vmm_elf_header_t))
 		return -1;
 
     fseek(file, 0, SEEK_SET);
     result = fread(buf, buf_size, 1, file);
 	if(result != 1)
 		return -1;
+#ifdef CONFIG_ARCH_X86_64
+	if(ISELF32(buf))
+		return -1;
+#else
+	if(ISELF64(buf))
+		return -1;
+#endif
 	if(elf_checkFile(buf) < 0)
 		return -1;
 
-	struct Elf32_Header *chck_elf = (struct Elf32_Header *)buf;
+	vmm_elf_header_t *chck_elf = (vmm_elf_header_t *)buf;
 	if(chck_elf->e_ehsize + (chck_elf->e_phnum * chck_elf->e_phentsize) > buf_size)
 		return -1;
 

@@ -21,6 +21,8 @@
 #include "vmm/vmm.h"
 #include "vmm/processor/decode.h"
 
+#include <vmm/platform/guest_vspace.h>
+
 #define TRAMPOLINE_LENGTH (100)
 
 static void resume_guest(vmm_vcpu_t *vcpu) {
@@ -44,7 +46,7 @@ void vmm_inject_exception(vmm_vcpu_t *vcpu, int exception, int has_error, uint32
         ZF_LOGF("Cannot inject exception");
     }
     if (has_error) {
-        vmm_guest_state_set_entry_exception_error_code(&vcpu->guest_state, error_code);
+        vmm_guest_state_set_entry_exception_error_code(&vcpu->guest_state, (seL4_Word)error_code);
     }
     vmm_guest_state_set_control_entry(&vcpu->guest_state, BIT(31) | exception | 3 << 8 | (has_error ? BIT(11) : 0));
 }
@@ -142,10 +144,21 @@ void vmm_start_ap_vcpu(vmm_vcpu_t *vcpu, unsigned int sipi_vector)
             TRAMPOLINE_LENGTH, instr);
 
     eip = vmm_emulate_realmode(&vcpu->parent_vmm->guest_mem, instr, &segment, eip,
-            TRAMPOLINE_LENGTH, gs);
+                               TRAMPOLINE_LENGTH, gs, 0, vcpu);
 
+    /* 64-bit guests go from realmode to 32-bit emulation mode to longmode */
+#ifdef CONFIG_ARCH_X86_64
+    memset(instr, 0, sizeof(instr));
+
+    vmm_fetch_instruction(&vcpu->parent_vmm->vcpus[BOOT_VCPU], eip, vmm_guest_state_get_cr3(gs, vcpu->guest_vcpu),
+                          TRAMPOLINE_LENGTH, instr);
+
+    eip = vmm_emulate_realmode(&vcpu->parent_vmm->guest_mem, instr, &segment, eip,
+                               TRAMPOLINE_LENGTH, gs, 1, vcpu);
+#else
     /* The next realmode instruction is jmp *eax, so lets just set eip to that value */
     eip = vmm_read_user_context(&vcpu->guest_state, USER_CONTEXT_EAX);
+#endif
 
     vmm_guest_state_set_eip(&vcpu->guest_state, eip);
 

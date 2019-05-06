@@ -69,9 +69,9 @@ int vmm_apic_local_deliver(vmm_vcpu_t *vcpu, int lvt_type);
 int vmm_apic_accept_pic_intr(vmm_vcpu_t *vcpu);
 
 void vmm_apic_mmio_write(vmm_vcpu_t *vcpu, void *cookie, uint32_t offset,
-        int len, const uint32_t data);
+        int len, const seL4_Word data);
 void vmm_apic_mmio_read(vmm_vcpu_t *vcpu, void *cookie, uint32_t offset,
-        int len, uint32_t *data);
+        int len, seL4_Word *data);
 
 uint64_t vmm_get_lapic_tscdeadline_msr(vmm_vcpu_t *vcpu);
 void vmm_set_lapic_tscdeadline_msr(vmm_vcpu_t *vcpu, uint64_t data);

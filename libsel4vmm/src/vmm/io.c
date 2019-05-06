@@ -54,7 +54,7 @@ static const char* vmm_debug_io_portno_desc(vmm_io_port_list_t *io_port, int por
 /* IO instruction execution handler. */
 int vmm_io_instruction_handler(vmm_vcpu_t *vcpu) {
 
-    unsigned int exit_qualification = vmm_guest_exit_get_qualification(&vcpu->guest_state);
+    seL4_Word exit_qualification = vmm_guest_exit_get_qualification(&vcpu->guest_state);
     unsigned int string, rep;
     int ret;
     unsigned int port_no;

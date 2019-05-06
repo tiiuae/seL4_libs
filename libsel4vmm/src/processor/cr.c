@@ -24,14 +24,14 @@
 
 #include "vmm/vmm.h"
 
-static inline unsigned int apply_cr_bits(unsigned int cr, unsigned int mask, unsigned int host_bits) {
+static inline unsigned int apply_cr_bits(seL4_Word cr, seL4_Word mask, seL4_Word host_bits) {
     /* force any bit in the mask to be the value from the shadow (both enabled and disabled) */
     cr |= (mask & host_bits);
     cr &= ~(mask & (~host_bits));
     return cr;
 }
 
-static int vmm_cr_set_cr0(vmm_vcpu_t *vcpu, unsigned int value) {
+static int vmm_cr_set_cr0(vmm_vcpu_t *vcpu, seL4_Word value) {
 
     if (value & CR0_RESERVED_BITS)
         return -1;
@@ -40,8 +40,8 @@ static int vmm_cr_set_cr0(vmm_vcpu_t *vcpu, unsigned int value) {
     if ((value & X86_CR0_PG) && !(vcpu->guest_state.virt.cr.cr0_shadow & X86_CR0_PG)) {
         /* guest is taking over paging. So we can no longer care about some of our CR4 values, and
          * we don't need cr3 load/store exiting anymore */
-        unsigned int new_mask = vcpu->guest_state.virt.cr.cr4_mask & ~(X86_CR4_PSE | X86_CR4_PAE);
-        unsigned int cr4_value = vmm_guest_state_get_cr4(&vcpu->guest_state, vcpu->guest_vcpu);
+        seL4_Word new_mask = vcpu->guest_state.virt.cr.cr4_mask & ~(X86_CR4_PSE | X86_CR4_PAE);
+        seL4_Word cr4_value = vmm_guest_state_get_cr4(&vcpu->guest_state, vcpu->guest_vcpu);
         /* for any bits that have changed in the mask, grab them from the shadow */
         cr4_value = apply_cr_bits(cr4_value, new_mask ^ vcpu->guest_state.virt.cr.cr4_mask, vcpu->guest_state.virt.cr.cr4_shadow);
         /* update mask and cr4 value */
@@ -49,7 +49,7 @@ static int vmm_cr_set_cr0(vmm_vcpu_t *vcpu, unsigned int value) {
         vmm_vmcs_write(vcpu->guest_vcpu, VMX_CONTROL_CR4_MASK, new_mask);
         vmm_guest_state_set_cr4(&vcpu->guest_state, cr4_value);
         /* now turn of cr3 load/store exiting */
-        unsigned int ppc = vmm_guest_state_get_control_ppc(&vcpu->guest_state);
+        seL4_Word ppc = vmm_guest_state_get_control_ppc(&vcpu->guest_state);
         ppc &= ~(VMX_CONTROL_PPC_CR3_LOAD_EXITING | VMX_CONTROL_PPC_CR3_STORE_EXITING);
         vmm_guest_state_set_control_ppc(&vcpu->guest_state, ppc);
         /* load the cached cr3 value */
@@ -75,7 +75,7 @@ static int vmm_cr_set_cr0(vmm_vcpu_t *vcpu, unsigned int value) {
     return 0;
 }
 
-static int vmm_cr_set_cr3(vmm_vcpu_t *vcpu, unsigned int value) {
+static int vmm_cr_set_cr3(vmm_vcpu_t *vcpu, seL4_Word value) {
     /* if the guest hasn't turned on paging then just cache this */
     vcpu->guest_state.virt.cr.cr3_guest = value;
     if (vcpu->guest_state.virt.cr.cr0_shadow & X86_CR0_PG) {
@@ -84,7 +84,7 @@ static int vmm_cr_set_cr3(vmm_vcpu_t *vcpu, unsigned int value) {
     return 0;
 }
 
-static int vmm_cr_get_cr3(vmm_vcpu_t *vcpu, unsigned int *value) {
+static int vmm_cr_get_cr3(vmm_vcpu_t *vcpu, seL4_Word *value) {
     if (vcpu->guest_state.virt.cr.cr0_shadow & X86_CR0_PG) {
         *value = vmm_guest_state_get_cr3(&vcpu->guest_state, vcpu->guest_vcpu);
     } else {
@@ -94,7 +94,7 @@ static int vmm_cr_get_cr3(vmm_vcpu_t *vcpu, unsigned int *value) {
 
 }
 
-static int vmm_cr_set_cr4(vmm_vcpu_t *vcpu, unsigned int value) {
+static int vmm_cr_set_cr4(vmm_vcpu_t *vcpu, seL4_Word value) {
 
     if (value & CR4_RESERVED_BITS)
         return -1;
@@ -116,7 +116,7 @@ static int vmm_cr_clts(vmm_vcpu_t *vcpu) {
     return -1;
 }
 
-static int vmm_cr_lmsw(vmm_vcpu_t *vcpu, unsigned int value) {
+static int vmm_cr_lmsw(vmm_vcpu_t *vcpu, seL4_Word value) {
     ZF_LOGI("Ignoring call of lmsw");
 
     return -1;
@@ -132,12 +132,22 @@ static int crExitRegs[] = {
     /*USER_CONTEXT_ESP*/-1,
     USER_CONTEXT_EBP,
     USER_CONTEXT_ESI,
-    USER_CONTEXT_EDI
+    USER_CONTEXT_EDI,
+#ifdef CONFIG_ARCH_X86_64
+    USER_CONTEXT_R8,
+    USER_CONTEXT_R9,
+    USER_CONTEXT_R10,
+    USER_CONTEXT_R11,
+    USER_CONTEXT_R12,
+    USER_CONTEXT_R13,
+    USER_CONTEXT_R14,
+    USER_CONTEXT_R15,
+#endif
 };
 
 int vmm_cr_access_handler(vmm_vcpu_t *vcpu) {
 
-    unsigned int exit_qualification, val;
+    seL4_Word exit_qualification, val;
     int cr, reg, ret = -1;
 
     exit_qualification = vmm_guest_exit_get_qualification(&vcpu->guest_state);

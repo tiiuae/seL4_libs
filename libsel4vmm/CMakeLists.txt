@@ -66,6 +66,12 @@ config_option(LibSel4VMMIgnoreEPTViolation VMM_IGNORE_EPT_VIOLATION
     DEFAULT OFF
 )
 
+config_option(LibSel4VMMUseHPET VMM_USE_HPET
+    "Use the High Precision Event Timer (HPET)"
+    DEPENDS "KernelSel4ArchX86_64"
+    DEFAULT OFF
+)
+
 add_config_library(sel4vmm "${configure_string}")
 
 add_compile_options(-std=gnu99)

@@ -41,8 +41,24 @@
 
 // We need to own the PSE and PAE bits up until the guest has actually turned on paging,
 // then it can control them
+#ifdef CONFIG_ARCH_X86_64
+#define VMM_VMCS_CR4_MASK           (X86_CR4_VMXE)
+#define VMM_VMCS_CR4_VALUE          (X86_CR4_PAE)
+#else
 #define VMM_VMCS_CR4_MASK           (X86_CR4_PSE | X86_CR4_PAE | X86_CR4_VMXE)
 #define VMM_VMCS_CR4_VALUE          (X86_CR4_PSE | X86_CR4_VMXE)
+#endif
+
+#define PAGE_PRESENT    BIT(0)
+#define PAGE_WRITE      BIT(1)
+#define PAGE_SUPERVISOR BIT(2)
+#define PAGE_SET_SIZE   BIT(7)
+
+#define PAGE_DEFAULT   PAGE_PRESENT | PAGE_WRITE | PAGE_SUPERVISOR
+#define PAGE_ENTRY     PAGE_DEFAULT | PAGE_SET_SIZE
+#define PAGE_REFERENCE PAGE_DEFAULT
+
+#define PAGE_MASK 0x7FFFFFFFFF000ULL
 
 typedef struct boot_guest_cookie {
     vmm_t *vmm;
@@ -195,29 +211,83 @@ static inline uint32_t vmm_plat_vesa_fbuffer_size(seL4_VBEModeInfoBlock_t *block
     return ALIGN_UP(block->vbe_common.bytesPerScanLine * block->vbe12_part1.yRes, 65536);
 }
 
+static int make_guest_pde_continued(uintptr_t guest_phys, void *vaddr, size_t size, size_t offset, void *cookie) {
+    assert(NULL != vaddr);
+    uint64_t *pd = vaddr;
+    int num_entries = size / sizeof(pd[0]);
+
+    /* Brute force 1:1 entries. */
+    for(int i = 0; i < num_entries; i++) {
+        /* Present, write, user, page size 2M */
+        pd[i] = (uint64_t)((uint64_t)((i) << PAGE_BITS_2M) | PAGE_ENTRY);
+    }
+
+    return 0;
+}
+
+static int make_guest_pdpt_continued(uintptr_t guest_phys, void *vaddr, size_t size, size_t offset, void *cookie) {
+    assert(offset == 0);
+    assert(size == BIT(seL4_PageBits));
+    assert(NULL != cookie);
+    assert(NULL != vaddr);
+
+    vmm_t *vmm = (vmm_t *)cookie;
+
+    uintptr_t pde = (uintptr_t)vspace_new_pages(&vmm->guest_mem.vspace, seL4_AllRights, 1, seL4_PageBits);
+    ZF_LOGF_IF(pde == 0, "Failed to allocate page for page-directory pointer table");
+
+    uint64_t *pdpt = vaddr;
+    pdpt[0] = (pde & PAGE_MASK) | PAGE_REFERENCE;
+
+    vmm_guest_vspace_touch(&vmm->guest_mem.vspace, pde, BIT(seL4_PageBits), make_guest_pde_continued, vmm);
+
+    return 0;
+}
+
 static int make_guest_page_dir_continued(uintptr_t guest_phys, void *vaddr, size_t size, size_t offset, void *cookie) {
     assert(offset == 0);
     assert(size == BIT(seL4_PageBits));
+    assert(NULL != vaddr);
+
+#ifdef CONFIG_ARCH_X86_64
+    assert(NULL != cookie);
+    vmm_t *vmm = (vmm_t *)cookie;
+
+    uintptr_t pdpt = (uintptr_t)vspace_new_pages(&vmm->guest_mem.vspace, seL4_AllRights, 1, seL4_PageBits);
+    ZF_LOGF_IF(0 == pdpt, "Failed to allocate page for page-directory pointer table");
+
+    uint64_t *pml4 = vaddr;
+    pml4[0] = (pdpt & PAGE_MASK) | PAGE_REFERENCE;
+
+    vmm_guest_vspace_touch(&vmm->guest_mem.vspace, pdpt, BIT(seL4_PageBits), make_guest_pdpt_continued, vmm);
+#else
     /* Write into this frame as the init page directory: 4M pages, 1 to 1 mapping. */
     uint32_t *pd = vaddr;
     for (int i = 0; i < 1024; i++) {
         /* Present, write, user, page size 4M */
-        pd[i] = (i << PAGE_BITS_4M) | 0x87;
+        pd[i] = (i << PAGE_BITS_4M) | PAGE_ENTRY;
     }
+#endif
     return 0;
 }
 
-static int make_guest_page_dir(vmm_t *vmm) {
-    /* Create a 4K Page to be our 1-1 pd */
+static int make_guest_address_space(vmm_t *vmm) {
+    /* Create a 4K Page to be our address space */
     /* This is constructed with magical new memory that we will not tell Linux about */
-    uintptr_t pd = (uintptr_t)vspace_new_pages(&vmm->guest_mem.vspace, seL4_AllRights, 1, seL4_PageBits);
-    if (pd == 0) {
-        ZF_LOGE("Failed to allocate page for initial guest pd");
+    uintptr_t root = (uintptr_t)vspace_new_pages(&vmm->guest_mem.vspace, seL4_AllRights, 1, seL4_PageBits);
+    if (root == 0) {
+        ZF_LOGE("Failed to allocate page for initial guest address space");
         return -1;
     }
-    printf("Guest page dir allocated at 0x%x. Creating 1-1 entries\n", (unsigned int)pd);
-    vmm->guest_image.pd = pd;
-    return vmm_guest_vspace_touch(&vmm->guest_mem.vspace, pd, BIT(seL4_PageBits), make_guest_page_dir_continued, NULL);
+    printf("Guest address space root allocated at 0x%x. Creating 1-1 entries\n", (unsigned int)root);
+    vmm->guest_image.pd = root;
+
+    void *cookie = NULL;
+
+#ifdef CONFIG_ARCH_X86_64
+    cookie = (void *)vmm;
+#endif
+    return vmm_guest_vspace_touch(&vmm->guest_mem.vspace, root, BIT(seL4_PageBits), make_guest_page_dir_continued, cookie);
 }
 
 static int make_guest_cmd_line_continued(uintptr_t phys, void *vaddr, size_t size, size_t offset, void *cookie) {
@@ -398,7 +468,7 @@ static int make_guest_boot_info(vmm_t *vmm) {
 void vmm_plat_init_guest_boot_structure(vmm_t *vmm, const char *cmdline) {
     int UNUSED err;
 
-    err = make_guest_page_dir(vmm);
+    err = make_guest_address_space(vmm);
     assert(!err);
 
     err = make_guest_cmd_line(vmm, cmdline);
@@ -425,7 +495,12 @@ void vmm_init_guest_thread_state(vmm_vcpu_t *vcpu) {
 
     /* Set the initial CR state */
     vcpu->guest_state.virt.cr.cr0_mask = VMM_VMCS_CR0_MASK;
+#ifdef CONFIG_ARCH_X86_64
+    /* In 64-bit mode, PG and PE always need to be enabled, otherwise a fault will occur. */
+    vcpu->guest_state.virt.cr.cr0_shadow = VMM_VMCS_CR0_MASK;
+#else
     vcpu->guest_state.virt.cr.cr0_shadow = 0;
+#endif
     vcpu->guest_state.virt.cr.cr0_host_bits = VMM_VMCS_CR0_VALUE;
 
     vcpu->guest_state.virt.cr.cr4_mask = VMM_VMCS_CR4_MASK;
@@ -524,7 +599,7 @@ static int vmm_load_guest_segment(vmm_t *vmm, seL4_Word source_offset,
 /* TODO: refactor yet more elf loading code */
 int vmm_load_guest_elf(vmm_t *vmm, const char *elfname, size_t alignment) {
     int ret;
-    char elf_file[256];
+    char elf_file[ELF_HEADER_SIZE];
 
     DPRINTF(4, "Loading guest elf %s\n", elfname);
     FILE *file = fopen(elfname, "r");
@@ -547,18 +622,18 @@ int vmm_load_guest_elf(vmm_t *vmm, const char *elfname, size_t alignment) {
      * if it isn't we will just fail when we try and get the frame */
     load_addr = ROUND_UP(load_addr, alignment);
     /* Calculate relocation offset. */
-    uintptr_t guest_kernel_addr = 0xFFFFFFFF;
-    uintptr_t guest_kernel_vaddr = 0xFFFFFFFF;
+    uintptr_t guest_kernel_addr = UINTPTR_MAX;
+    uintptr_t guest_kernel_vaddr = UINTPTR_MAX;
     for (int i = 0; i < n_headers; i++) {
         if (elf_getProgramHeaderType(elf_file, i) != PT_LOAD) {
             continue;
         }
-        uint32_t addr = elf_getProgramHeaderPaddr(elf_file, i);
+        seL4_Word addr = elf_getProgramHeaderPaddr(elf_file, i);
         if (addr < guest_kernel_addr) {
             guest_kernel_addr = addr;
         }
-        uint32_t vaddr = elf_getProgramHeaderVaddr(elf_file, i);
-        if (vaddr < guest_kernel_vaddr) {
+        seL4_Word vaddr = elf_getProgramHeaderVaddr(elf_file, i);
+        if (vaddr && (vaddr < guest_kernel_vaddr)) {
             guest_kernel_vaddr = vaddr;
         }
     }
