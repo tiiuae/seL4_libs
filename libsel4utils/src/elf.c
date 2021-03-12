@@ -35,7 +35,7 @@ static int load_segment(
     vspace_t *loader_vspace,
     vka_t *loadee_vka,
     vka_t *loader_vka,
-    char *src,
+    char const *src,
     size_t file_size,
     int num_regions,
     sel4utils_elf_region_t regions[num_regions],
@@ -174,13 +174,13 @@ static int load_segments(
     vspace_t *loader_vspace,
     vka_t *loadee_vka,
     vka_t *loader_vka,
-    elf_t *elf_file,
+    elf_t const *elf_file,
     int num_regions,
     sel4utils_elf_region_t regions[num_regions])
 {
     for (int i = 0; i < num_regions; i++) {
         int segment_index = regions[i].segment_index;
-        char *source_addr = elf_getProgramSegment(elf_file, segment_index);
+        char const *source_addr = elf_getProgramSegment(elf_file, segment_index);
         if (source_addr == NULL) {
             return 1;
         }
@@ -196,14 +196,14 @@ static int load_segments(
 }
 
 static bool is_loadable_section(
-    elf_t *elf_file,
+    elf_t const *elf_file,
     int index)
 {
     return elf_getProgramHeaderType(elf_file, index) == PT_LOAD;
 }
 
 static int count_loadable_regions(
-    elf_t *elf_file)
+    elf_t const *elf_file)
 {
     int num_headers = elf_getNumProgramHeaders(elf_file);
     int loadable_headers = 0;
@@ -218,7 +218,7 @@ static int count_loadable_regions(
 }
 
 int sel4utils_elf_num_regions(
-    elf_t *elf_file)
+    elf_t const *elf_file)
 {
     return count_loadable_regions(elf_file);
 }
@@ -373,7 +373,7 @@ static int prepare_reservations(
  * @return 0 on success.
  */
 static int read_regions(
-    elf_t *elf_file,
+    elf_t const *elf_file,
     size_t total_regions,
     sel4utils_elf_region_t regions[total_regions])
 {
@@ -445,7 +445,7 @@ static int compare_regions(
  */
 static int elf_reserve_regions_in_vspace(
     vspace_t *loadee,
-    elf_t *elf_file,
+    elf_t const *elf_file,
     int num_regions,
     sel4utils_elf_region_t regions[num_regions],
     int mapanywhere)
@@ -473,7 +473,7 @@ static int elf_reserve_regions_in_vspace(
 }
 
 static void *entry_point(
-    elf_t *elf_file)
+    elf_t const *elf_file)
 {
     uint64_t entry_point = elf_getEntryPoint(elf_file);
     if ((uint32_t)(entry_point >> 32) != 0) {
@@ -488,7 +488,7 @@ static void *entry_point(
 
 void *sel4utils_elf_reserve(
     vspace_t *loadee,
-    elf_t *elf_file,
+    elf_t const *elf_file,
     sel4utils_elf_region_t *regions)
 {
     /* Count number of loadable segments */
@@ -510,7 +510,7 @@ void *sel4utils_elf_load_record_regions(
     vspace_t *loader,
     vka_t *loadee_vka,
     vka_t *loader_vka,
-    elf_t *elf_file,
+    elf_t const *elf_file,
     sel4utils_elf_region_t *regions,
     int mapanywhere)
 {
@@ -551,7 +551,7 @@ void *sel4utils_elf_load_record_regions(
 }
 
 uintptr_t sel4utils_elf_get_vsyscall(
-    elf_t *elf_file)
+    elf_t const *elf_file)
 {
     uintptr_t *addr = (uintptr_t *)sel4utils_elf_get_section(elf_file, "__vsyscall", NULL);
     if (addr) {
@@ -562,13 +562,13 @@ uintptr_t sel4utils_elf_get_vsyscall(
 }
 
 uintptr_t sel4utils_elf_get_section(
-    elf_t *elf_file,
+    elf_t const *elf_file,
     const char *section_name,
     uint64_t *section_size)
 {
     /* See if we can find the section */
     size_t section_id;
-    void *addr = elf_getSectionNamed(elf_file, section_name, &section_id);
+    void const *addr = elf_getSectionNamed(elf_file, section_name, &section_id);
     if (addr) {
         if (section_size != NULL) {
             *section_size = elf_getSectionSize(elf_file, section_id);
@@ -584,19 +584,19 @@ void *sel4utils_elf_load(
     vspace_t *loader,
     vka_t *loadee_vka,
     vka_t *loader_vka,
-    elf_t *elf_file)
+    elf_t const *elf_file)
 {
     return sel4utils_elf_load_record_regions(loadee, loader, loadee_vka, loader_vka, elf_file, NULL, 0);
 }
 
 uint32_t sel4utils_elf_num_phdrs(
-    elf_t *elf_file)
+    elf_t const *elf_file)
 {
     return elf_getNumProgramHeaders(elf_file);
 }
 
 void sel4utils_elf_read_phdrs(
-    elf_t *elf_file,
+    elf_t const *elf_file,
     size_t max_phdrs,
     Elf_Phdr *phdrs)
 {

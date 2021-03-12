@@ -68,7 +68,7 @@ sel4utils_elf_load_record_regions(
     vspace_t *loader,
     vka_t *loadee_vka,
     vka_t *loader_vka,
-    elf_t *elf,
+    elf_t const *elf,
     sel4utils_elf_region_t *regions,
     int mapanywhere);
 
@@ -90,7 +90,7 @@ sel4utils_elf_load(
     vspace_t *loader,
     vka_t *loadee_vka,
     vka_t *loader_vka,
-    elf_t *elf);
+    elf_t const *elf);
 
 /**
  * Parses an elf file but does not actually load it. Merely reserves the regions in the vspace
@@ -105,7 +105,7 @@ sel4utils_elf_load(
  */
 void *sel4utils_elf_reserve(
     vspace_t *loadee,
-    elf_t *elf,
+    elf_t const *elf,
     sel4utils_elf_region_t *regions);
 
 /**
@@ -117,7 +117,7 @@ void *sel4utils_elf_reserve(
  * @return Number of loadable regions in the elf
  */
 int sel4utils_elf_num_regions(
-    elf_t *elf);
+    elf_t const *elf);
 
 /**
  * Looks for the __vsyscall section in an elf file and returns the value. This
@@ -128,7 +128,7 @@ int sel4utils_elf_num_regions(
  * @return Address of vsyscall function or 0 if not found
  */
 uintptr_t sel4utils_elf_get_vsyscall(
-    elf_t *elf);
+    elf_t const *elf);
 
 /**
  * Finds the section_name section in an elf file and returns the address.
@@ -142,8 +142,8 @@ uintptr_t sel4utils_elf_get_vsyscall(
  * @return Address of section or 0 if not found
  */
 uintptr_t sel4utils_elf_get_section(
-    elf_t *elf,
-    const char *section_name,
+    elf_t const *elf,
+    char const *section_name,
     uint64_t *section_size);
 
 /**
@@ -154,7 +154,7 @@ uintptr_t sel4utils_elf_get_section(
  * @return Number of phdrs in the elf
  */
 uint32_t sel4utils_elf_num_phdrs(
-    elf_t *elf);
+    elf_t const *elf);
 
 /**
  * Parse an elf file and retrieve all the phdrs
@@ -166,6 +166,6 @@ uint32_t sel4utils_elf_num_phdrs(
  * @return Number of phdrs retrieved
  */
 void sel4utils_elf_read_phdrs(
-    elf_t *elf,
+    elf_t const *elf,
     size_t max_phdrs,
     Elf_Phdr *phdrs);
