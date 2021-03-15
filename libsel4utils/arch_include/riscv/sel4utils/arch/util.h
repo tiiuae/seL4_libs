@@ -44,3 +44,9 @@ sel4utils_set_stack_pointer(seL4_UserContext *regs, seL4_Word value)
     regs->sp = value;
 }
 
+static inline void
+sel4utils_set_arg0(seL4_UserContext *regs, seL4_Word value)
+{
+    regs->a0 = value;
+}
+
