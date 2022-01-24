@@ -16,6 +16,7 @@
 #include <bits/errno.h>
 #include <sys/uio.h>
 #include <muslcsys/vsyscall.h>
+#include <sel4debug/stack_trace.h>
 #include "syscalls.h"
 #ifdef CONFIG_LIB_SEL4_MUSLC_SYS_CPIO_FS
 #include <cpio/cpio.h>
@@ -252,6 +253,8 @@ static void debug_error(int sysnum)
     for (i = 0; buf[i]; i++) {
         seL4_DebugPutChar(buf[i]);
     }
+
+    print_stack_trace();
 }
 #else
 static void debug_error(int sysnum)

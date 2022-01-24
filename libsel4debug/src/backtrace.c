@@ -4,19 +4,13 @@
  * SPDX-License-Identifier: BSD-2-Clause
  */
 #include <autoconf.h>
-#include <sel4/types.h>
-
-/* Don't instrument seL4_GetIPCBuffer as it's called in the __cyg_profile_func_*
- * functions below and we don't want to recurse.
- * This definition has to come before the definition that is included
- * for the attribute to have effect.
- */
-LIBSEL4_INLINE_FUNC seL4_IPCBuffer *seL4_GetIPCBuffer(void) __attribute__((no_instrument_function));
-
 #include <sel4debug/gen_config.h>
 #include <sel4/sel4.h>
+#include <sel4/simple_types.h>
 #include <sel4debug/instrumentation.h>
 
+/* Don't instrument seL4_GetIPCBuffer so we don't recurse. */
+seL4_IPCBuffer *seL4_GetIPCBuffer(void) __attribute__((no_instrument_function));
 
 /* We can't just store backtrace information in a single static area because it
  * needs to be tracked per-thread. To do this we assume each thread has a
@@ -56,7 +50,7 @@ int backtrace(void **buffer, int size)
 
 void __cyg_profile_func_enter(void *func, void *caller)
 {
-    if (seL4_GetIPCBuffer() == NULL) {
+    if (seL4_GetIPCBuffer() == seL4_Null) {
         /* The caller doesn't have a valid IPC buffer. Assume it has not been
          * setup yet and just skip logging the current function.
          */
@@ -72,7 +66,7 @@ void __cyg_profile_func_enter(void *func, void *caller)
 
 void __cyg_profile_func_exit(void *func, void *caller)
 {
-    if (seL4_GetIPCBuffer() == NULL) {
+    if (seL4_GetIPCBuffer() == seL4_Null) {
         return;
     }
     int *bt_stack_sz = (int *)BACKTRACE_BASE;

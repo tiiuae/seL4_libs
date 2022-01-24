@@ -1,5 +1,6 @@
 /*
  * Copyright 2017, Data61, CSIRO (ABN 41 687 119 230)
+ * Copyright 2022, Technology Innovation Institute
  *
  * SPDX-License-Identifier: BSD-2-Clause
  */
@@ -10,11 +11,11 @@
  * this as a debugging helper when you need to call a function from a context
  * where you don't have a stack. Note, there are arguments to this function,
  * but they are passed in registers:
- *                                     ARM  x86
- *  Function pointer to jump to         r0  eax
- *  First argument                      r1  ebx
- *  Second argument                     r2  ecx
- *  Third argument                      r3  edx
+ *                                     AARCH32 AARCH64 x86
+ *  Function pointer to jump to           r0      x0   eax
+ *  First argument                        r1      x1   ebx
+ *  Second argument                       r2      x2   ecx
+ *  Third argument                        r3      x3   edx
  *
  * This function is not thread safe, has not been tested thoroughly and you
  * should not return from the target function being jumped to. This is *only*

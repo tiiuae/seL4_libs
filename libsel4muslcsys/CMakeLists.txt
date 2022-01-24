@@ -91,6 +91,7 @@ target_link_libraries(
         cpio
         utils
         sel4utils
+        sel4debug
         sel4muslcsys_Config
     PRIVATE sel4_autoconf
 )

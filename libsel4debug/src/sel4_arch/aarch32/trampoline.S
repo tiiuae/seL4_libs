@@ -30,4 +30,4 @@ debug_trampoline:
     .align  8
     .space  4096
 debug_stack_top:
-#endif /* CONFIG_ARCH_AARCH64 */
+#endif /* CONFIG_ARCH_AARCH32 */
