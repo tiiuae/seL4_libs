@@ -17,3 +17,13 @@ utils_valid_size_bits(size_t size_bits)
     return sel4_valid_size_bits(size_bits);
 }
 
+
+/* Similar macros to libutils/page.h.
+ * Placed here to keep libutils "external" 
+ * to seL4-specific libraries. */
+
+#define SEL4_PAGE_BITS (SEL4_SMALLEST_PAGE_BITS)
+#define SEL4_PAGE_SIZE (BIT(SEL4_PAGE_BITS))
+
+#define SEL4_PAGE_ALIGN(addr)      ALIGN_DOWN(addr, SEL4_PAGE_BITS)
+#define SEL4_IS_PAGE_ALIGNED(addr) IS_ALIGNED(addr, SEL4_PAGE_BITS)
