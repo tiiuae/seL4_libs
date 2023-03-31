@@ -12,7 +12,9 @@
 
 #include <vspace/arch/page.h>
 
-#define SEL4_NUM_PAGE_SIZES ((int) ARRAY_SIZE(sel4_page_sizes))
+#define SEL4_NUM_PAGE_SIZES     ((int) ARRAY_SIZE(sel4_page_sizes))
+#define SEL4_SMALLEST_PAGE_BITS (sel4_page_sizes[0])
+#define SEL4_LARGEST_PAGE_BITS  (sel4_page_sizes[(SEL4_NUM_PAGE_SIZES - 1)])
 
 static inline bool
 sel4_valid_size_bits(size_t size_bits)
